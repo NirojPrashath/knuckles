@@ -1,5 +1,5 @@
 /**
- * Shared styles for form-field components in tactile-minimal.
+ * Shared styles for form-field components in slate-light.
  *
  * Any component that renders a bordered text input surface (Input, Textarea,
  * PasswordInput, SearchInput, NumberInput, PhoneInput, etc.) MUST import these
