@@ -1,10 +1,10 @@
 /**
  * Six retail design systems ship in `themes.css`; this is the switcher's model.
- * The store's own direction is tactile-minimal — the tactile, near-monochrome
+ * The store's own direction is slate-light — the tactile, near-monochrome
  * system — because speciality coffee sells on materiality, not on colour.
  */
 export const THEMES = [
-  { id: 'tactile-minimal', label: 'Tactile Minimal', swatch: 'linear-gradient(135deg,#070707,#f2f2f2)', mode: 'light', vibe: 'Tactile depth · minimal colour' },
+  { id: 'slate-light', label: 'Slate', swatch: 'linear-gradient(135deg,#070707,#f2f2f2)', mode: 'light', vibe: 'Tactile depth · minimal colour' },
   { id: 'minimal-light', label: 'Minimal Light', swatch: 'linear-gradient(135deg,#111111,#ffffff)', mode: 'light', vibe: 'Black primary · border-only cards' },
   { id: 'pillow-light', label: 'Pillow', swatch: 'linear-gradient(135deg,#e8e2d8,#ffffff)', mode: 'light', vibe: 'Soft shadows · rounded comfort' },
   { id: 'light-marketplace', label: 'Marketplace', swatch: 'linear-gradient(135deg,#2f2f2f,#efefef)', mode: 'light', vibe: 'Charcoal buttons · flat cards' },
@@ -40,5 +40,5 @@ export function initialTheme(): ThemeId {
   } catch {
     /* ignore */
   }
-  return 'tactile-minimal'
+  return 'slate-light'
 }

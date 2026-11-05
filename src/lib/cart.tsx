@@ -1,5 +1,7 @@
 import * as React from 'react'
-import { BAG_SIZES, COUPONS, DELIVERY, PRODUCTS, money, type Product } from '@/lib/catalog'
+import { api, type Quote } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
+import { BAG_SIZES, DELIVERY, PRODUCTS, money, type Product } from '@/lib/catalog'
 
 export type CartLine = {
   /** stable key: product + bag size + grind, so the same coffee twice is one line */
@@ -83,36 +85,60 @@ export type Totals = {
   freeShippingGap: number
 }
 
-export function computeTotals(state: CartState): Totals {
+/**
+ * A LOCAL ESTIMATE, shown only until the server answers.
+ *
+ * Note what it cannot do: work out a discount. The coupon table used to live
+ * in this bundle — `COUPONS` in catalog.ts, with the 25% wholesale rate in
+ * plain sight — which is review finding F-01. It is gone. The browser no
+ * longer knows which codes exist, what they are worth, or who qualifies, so
+ * `discount` here is always 0 and only the server can make it anything else.
+ *
+ * Everything this function returns is for responsiveness. The figure that is
+ * charged comes from /api/knuckles/quote, and from nowhere else.
+ */
+export function estimateTotals(state: CartState): Totals {
   const subtotal = state.lines.reduce((sum, line) => {
     const product = PRODUCTS.find((p) => p.id === line.productId)
     return product ? sum + linePrice(product, line.grams, line.qty) : sum
   }, 0)
-
-  const coupon = state.coupon ? COUPONS[state.coupon] : undefined
-  const discount = !coupon
-    ? 0
-    : coupon.type === 'percent'
-      ? Math.round((subtotal * coupon.value) / 100 / 10) * 10
-      : Math.min(coupon.value, subtotal)
-
-  const afterDiscount = subtotal - discount
   const zone = DELIVERY[state.zone]
-  const shipping = afterDiscount >= 12000 || afterDiscount === 0 ? 0 : zone.fee
-
+  const shipping = subtotal >= 12000 || subtotal === 0 ? 0 : zone.fee
   return {
     count: state.lines.reduce((n, l) => n + l.qty, 0),
     subtotal,
-    discount,
+    discount: 0,
     shipping,
-    total: afterDiscount + shipping,
-    couponNote: coupon?.note ?? null,
-    freeShippingGap: Math.max(0, 12000 - afterDiscount),
+    total: subtotal + shipping,
+    couponNote: null,
+    freeShippingGap: Math.max(0, 12000 - subtotal),
+  }
+}
+
+/** Map the server's authoritative quote onto the shape the UI already uses. */
+function totalsFromQuote(quote: Quote, count: number): Totals {
+  return {
+    count,
+    subtotal: quote.subtotal,
+    discount: quote.discount,
+    shipping: quote.delivery,
+    total: quote.total,
+    couponNote: quote.couponNote,
+    freeShippingGap: Math.max(0, 12000 - (quote.subtotal - quote.discount)),
   }
 }
 
 type CartContext = CartState & {
+  /** server-priced when `priced` is true, a local estimate otherwise */
   totals: Totals
+  /** the raw server quote, or null before the first reply */
+  quote: Quote | null
+  /** true once the figures on screen are the server's, not ours */
+  priced: boolean
+  /** a quote request is in flight */
+  pricing: boolean
+  /** the server refused to price the cart at all (network down, bad line) */
+  priceError: string | null
   add: (productId: string, grams: number, grind: string, qty?: number) => void
   remove: (key: string) => void
   setQty: (key: string, qty: number) => void
@@ -144,6 +170,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [flash, setFlash] = React.useState<string | null>(null)
   const [hydrated, setHydrated] = React.useState(false)
 
+  /* Who is signed in matters to the price: the wholesale rate is granted by a
+     verified entitlement on the account, so the same basket legitimately costs
+     a café less than it costs me. That is decided server-side — this is only
+     the reason the quote is re-requested when the user changes. */
+  const { user } = useAuth()
+  const [quote, setQuote] = React.useState<Quote | null>(null)
+  const [pricing, setPricing] = React.useState(false)
+  const [priceError, setPriceError] = React.useState<string | null>(null)
+
   // localStorage is a browser-only store: read it in an effect so SSR still renders
   React.useEffect(() => {
     try {
@@ -164,11 +199,66 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state, hydrated])
 
+  /* The only thing we send: product ids, sizes, grinds, quantities. No
+     prices, no subtotal, no discount — nothing the server would have to
+     trust. It recomputes the lot and returns the figure it will charge. */
+  const request = React.useMemo(
+    () => ({
+      lines: state.lines.map((l) => ({ productId: l.productId, grams: l.grams, grind: l.grind, qty: l.qty })),
+      zone: state.zone,
+      ...(state.coupon ? { couponCode: state.coupon } : {}),
+    }),
+    [state.lines, state.zone, state.coupon],
+  )
+  const requestKey = JSON.stringify(request) + '|' + (user?.id ?? 'anonymous')
+
+  React.useEffect(() => {
+    if (!hydrated) return
+    if (request.lines.length === 0) {
+      setQuote(null)
+      setPriceError(null)
+      setPricing(false)
+      return
+    }
+    const controller = new AbortController()
+    setPricing(true)
+    // Debounced: holding the + button should not fire a request per click.
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await api<{ quote: Quote }>('POST', '/api/knuckles/quote', request, {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
+        if (res.ok) {
+          setQuote(res.data.quote)
+          setPriceError(null)
+        } else {
+          setQuote(null)
+          setPriceError(res.error.message)
+        }
+      } catch {
+        /* aborted by a newer request — the newer one owns the state now */
+      } finally {
+        if (!controller.signal.aborted) setPricing(false)
+      }
+    }, 220)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestKey, hydrated])
+
   const value = React.useMemo<CartContext>(() => {
-    const totals = computeTotals(state)
+    const estimate = estimateTotals(state)
+    const totals = quote ? totalsFromQuote(quote, estimate.count) : estimate
     return {
       ...state,
       totals,
+      quote,
+      priced: quote !== null,
+      pricing,
+      priceError,
       drawerOpen,
       flash,
       add: (productId, grams, grind, qty) => {
@@ -187,7 +277,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       openDrawer: () => setDrawerOpen(true),
       closeDrawer: () => setDrawerOpen(false),
     }
-  }, [state, drawerOpen, flash])
+  }, [state, quote, pricing, priceError, drawerOpen, flash])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

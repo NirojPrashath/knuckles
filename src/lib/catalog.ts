@@ -300,11 +300,18 @@ export const CART_SEED = [
   { productId: 'p1', grams: 250, grind: 'filter', qty: 2 },
 ]
 
-export const COUPONS: Record<string, { type: 'percent' | 'flat'; value: number; note: string }> = {
-  ROAST10: { type: 'percent', value: 10, note: '10% off — new customer code' },
-  HARVEST: { type: 'flat', value: 1500, note: 'LKR 1,500 off orders — harvest festival' },
-  CAFE25: { type: 'percent', value: 25, note: 'Wholesale 25% — licensed cafés only' },
-}
+/*
+ * The coupon table used to live here — code, type and value, shipped to every
+ * browser that loaded the shop. That is review finding F-01, and "hide the
+ * discount UI unless you qualify" was never a fix, because the data was in the
+ * bundle either way.
+ *
+ * It now exists only in the server's memory (backend/src/apps/knuckles.mjs).
+ * The client posts a code it was told by a human; the server decides whether
+ * it exists, whether the basket qualifies, and whether this account is
+ * entitled to it — and answers with one identical message for every kind of
+ * refusal, so the endpoint cannot be used to enumerate valid codes.
+ */
 
 /** Delivery zones a Colombo roaster actually serves. */
 export const DELIVERY: Record<string, { label: string; eta: string; fee: number }> = {
