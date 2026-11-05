@@ -2,11 +2,11 @@
  * Tokens are verbatim from registry/<system>/globals.json.
  * Corpus: github.com/marvkr/better-design @ e146625 (MIT)
  * Use: <html data-theme="linear"> or <section data-theme="stripe">
- * 6 system(s): tactile-minimal, minimal-light, pillow-light, light-marketplace, precision-light, editorial-dark
+ * 6 system(s): slate-light, minimal-light, pillow-light, light-marketplace, precision-light, editorial-dark
  */
 
-/* Tactile Minimal — light · Tactile depth, minimal color · best for Productivity, focus tools */
-[data-theme="tactile-minimal"] {
+/* Slate — light · Tactile depth, minimal color · best for Productivity, focus tools */
+[data-theme="slate-light"] {
   --app-font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --background: oklch(0.99 0 0);
   --foreground: oklch(0.13 0 0);

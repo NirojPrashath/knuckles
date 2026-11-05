@@ -2,6 +2,7 @@ import * as React from 'react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SoundProvider } from '@/components/ui/sound-provider'
 import { CartProvider } from '@/lib/cart'
+import { AuthProvider } from '@/lib/auth'
 import { Nav, Footer, CartDrawer, CartFlash } from '@/components/site/Chrome'
 import { ThemeSwitcher } from '@/components/site/ThemeSwitcher'
 import { Home } from '@/pages/Home'
@@ -69,6 +70,7 @@ export default function App() {
   return (
     <SoundProvider>
       <TooltipProvider delayDuration={200}>
+        <AuthProvider>
         <CartProvider>
           <a
             href="#main"
@@ -88,6 +90,7 @@ export default function App() {
           <CartFlash />
           <ThemeSwitcher theme={theme} onTheme={setTheme} />
         </CartProvider>
+        </AuthProvider>
       </TooltipProvider>
     </SoundProvider>
   )
