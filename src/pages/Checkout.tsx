@@ -1,4 +1,6 @@
 import * as React from 'react'
+import { api, type PlacedOrder } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import {
   AlertCircle,
   ArrowLeft,
@@ -45,11 +47,16 @@ const STEP_LABELS = ['Contact', 'Delivery', 'Payment']
  * bags of coffee has confused itself with a bank.
  */
 export function Checkout() {
-  const { lines, totals, zone, setZone, clear } = useCart()
+  const { lines, totals, zone, setZone, clear, coupon, priced, pricing } = useCart()
+  const { user } = useAuth()
   const [step, setStep] = React.useState(0)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [placing, setPlacing] = React.useState(false)
-  const [order, setOrder] = React.useState<{ number: string; eta: string } | null>(null)
+  const [order, setOrder] = React.useState<{ number: string; eta: string; total: number } | null>(null)
+  /* stable for this checkout attempt, so a retry is recognised as the same order */
+  const idempotencyKey = React.useRef(
+    'ck-' + Math.random().toString(36).slice(2) + Date.now().toString(36),
+  )
 
   const [contact, setContact] = React.useState({ email: '', phone: '', name: '' })
   const [address, setAddress] = React.useState({
@@ -60,7 +67,16 @@ export function Checkout() {
     notes: '',
   })
   const [payment, setPayment] = React.useState<Payment>('card')
-  const [card, setCard] = React.useState({ number: '', expiry: '', cvc: '', name: '' })
+  /*
+   * No card state. Review finding F-03 was that this form put a PAN and CVC
+   * into component state and then into a request body — and the server now
+   * refuses any payload containing `cardNumber` or `cvc` outright, so even a
+   * mistake here cannot reach it. A real integration mounts the provider's
+   * hosted fields in an iframe this origin cannot read, and receives only an
+   * opaque token. `paymentToken` below stands in for that token.
+   */
+  const [paymentToken, setPaymentToken] = React.useState<string | null>(null)
+  const [submitError, setSubmitError] = React.useState<string | null>(null)
   const [newsletter, setNewsletter] = React.useState(false)
   const [terms, setTerms] = React.useState(false)
 
@@ -81,10 +97,7 @@ export function Checkout() {
     }
     if (index === 2) {
       if (payment === 'card') {
-        if (card.number.replace(/\s/g, '').length < 12) next.number = 'That card number looks short'
-        if (!/^\d{2}\s?\/?\s?\d{2}$/.test(card.expiry.trim())) next.expiry = 'MM / YY'
-        if (card.cvc.trim().length < 3) next.cvc = '3 digits on the back'
-        if (card.name.trim().length < 2) next.name = 'Name on the card'
+        if (!paymentToken) next.number = 'Authorise the card first'
       }
       if (!terms) next.terms = 'Please accept the taste guarantee and delivery terms'
     }
@@ -97,16 +110,50 @@ export function Checkout() {
     setStep((s) => Math.min(2, s + 1))
   }
 
-  const placeOrder = (e: React.FormEvent) => {
+  /*
+   * Placing the order. What leaves the browser: product ids, sizes, grinds,
+   * quantities, a delivery address and — at most — an opaque payment token.
+   * No prices. The server re-prices the basket from its own catalogue and
+   * charges that, so a total edited in devtools changes a label and nothing
+   * else. `idempotencyKey` means a double-submit returns the first order
+   * rather than creating a second one.
+   */
+  const placeOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate(2)) return
+    setSubmitError(null)
     setPlacing(true)
-    window.setTimeout(() => {
-      const number = `KR-${String(Math.floor(1000 + Math.random() * 8999))}`
-      setOrder({ number, eta: zone === 'colombo' ? 'Tomorrow before 10:00' : zone === 'pickup' ? 'Ready in 2 hours' : 'In 2–3 working days' })
-      setPlacing(false)
-      clear()
-    }, 1100)
+
+    const res = await api<{ order: PlacedOrder; replayed?: boolean }>('POST', '/api/knuckles/orders', {
+      cart: {
+        lines: lines.map((l) => ({ productId: l.productId, grams: l.grams, grind: l.grind, qty: l.qty })),
+        zone,
+        ...(coupon ? { couponCode: coupon } : {}),
+      },
+      contactName: contact.name,
+      contactEmail: contact.email,
+      contactPhone: contact.phone,
+      addressLine: [address.line1, address.line2].filter(Boolean).join(', '),
+      district: address.city,
+      ...(paymentToken ? { paymentToken } : {}),
+      idempotencyKey: idempotencyKey.current,
+    })
+
+    setPlacing(false)
+    if (!res.ok) {
+      setSubmitError(
+        res.error.code === 'unauthorized'
+          ? 'Sign in before placing the order — the server will not accept an anonymous one.'
+          : res.error.message + (res.error.issues?.length ? ` (${res.error.issues.join(', ')})` : ''),
+      )
+      return
+    }
+    setOrder({
+      number: res.data.order.id,
+      eta: zone === 'colombo' ? 'Tomorrow before 10:00' : zone === 'pickup' ? 'Ready in 2 hours' : 'In 2–3 working days',
+      total: res.data.order.total,
+    })
+    clear()
   }
 
   /* --------------------------------------------------------------- confirmed */
@@ -136,7 +183,7 @@ export function Checkout() {
                 label="Paid"
                 value={
                   payment === 'card'
-                    ? `Card ending ${card.number.replace(/\s/g, '').slice(-4) || '····'}`
+                    ? 'Card · tokenised by the provider'
                     : payment === 'transfer'
                       ? 'Bank transfer pending'
                       : 'Cash on delivery'
@@ -394,56 +441,71 @@ export function Checkout() {
 
                 {payment === 'card' && (
                   <div className="space-y-4 rounded-lg border border-border bg-card/50 p-4">
-                    <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Lock className="size-3.5" />
-                      This demo collects nothing — the fields validate, then discard what you type.
+                    <p className="inline-flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Lock className="mt-px size-3.5 shrink-0" />
+                      <span>
+                        Card details are never typed into this page. A real build mounts the payment
+                        provider&rsquo;s hosted fields in an iframe this origin cannot read or script, and gets
+                        back a one-time token. The server rejects any request containing a card number
+                        or CVC, so this page has no way to send one even by mistake.
+                      </span>
                     </p>
-                    <Field id="cardnumber" label="Card number" error={errors.number}>
-                      <Input
-                        id="cardnumber"
-                        inputMode="numeric"
-                        value={card.number}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 16)
-                          update(setCard, card)({ number: digits.replace(/(.{4})/g, '$1 ').trim() })
-                        }}
-                        aria-invalid={!!errors.number}
-                        placeholder="4242 4242 4242 4242"
-                        className="font-mono"
-                      />
-                    </Field>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <Field id="expiry" label="Expiry" error={errors.expiry}>
-                        <Input
-                          id="expiry"
-                          value={card.expiry}
-                          onChange={(e) => update(setCard, card)({ expiry: e.target.value })}
-                          aria-invalid={!!errors.expiry}
-                          placeholder="09 / 28"
-                          className="font-mono"
-                        />
-                      </Field>
-                      <Field id="cvc" label="CVC" error={errors.cvc}>
-                        <Input
-                          id="cvc"
-                          inputMode="numeric"
-                          value={card.cvc}
-                          onChange={(e) => update(setCard, card)({ cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })}
-                          aria-invalid={!!errors.cvc}
-                          placeholder="123"
-                          className="font-mono"
-                        />
-                      </Field>
-                      <Field id="cardname" label="Name on card" error={errors.name}>
-                        <Input
-                          id="cardname"
-                          value={card.name}
-                          onChange={(e) => update(setCard, card)({ name: e.target.value })}
-                          aria-invalid={!!errors.name}
-                          placeholder="D. Fernando"
-                        />
-                      </Field>
-                    </div>
+
+                    {paymentToken ? (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-600/40 bg-emerald-600/5 px-3 py-2.5">
+                        <span className="inline-flex items-center gap-2 text-xs">
+                          <Lock className="size-3.5 text-emerald-700" />
+                          <span className="text-muted-foreground">Authorised · token</span>
+                          <span className="font-mono font-medium">{paymentToken.slice(0, 10)}…</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentToken(null)}
+                          className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div
+                          aria-hidden
+                          className="grid gap-3 rounded-lg border border-dashed border-border/80 bg-background/60 p-3 sm:grid-cols-[2fr_1fr_1fr]"
+                        >
+                          {['Card number', 'Expiry', 'CVC'].map((label) => (
+                            <div key={label} className="space-y-1.5">
+                              <span className="label text-[10px] text-muted-foreground">{label}</span>
+                              <div className="flex h-9 items-center rounded-md border border-border bg-muted/40 px-2.5">
+                                <span className="font-mono text-xs text-muted-foreground/70">
+                                  provider iframe
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            // Stands in for the provider SDK resolving with a token.
+                            const bytes = new Uint8Array(12)
+                            crypto.getRandomValues(bytes)
+                            setPaymentToken(
+                              'tok_' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join(''),
+                            )
+                            setErrors((prev) => ({ ...prev, number: '' }))
+                          }}
+                        >
+                          Authorise card
+                        </Button>
+                        {errors.number ? (
+                          <p role="alert" className="text-xs text-destructive">
+                            {errors.number}
+                          </p>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -513,6 +575,17 @@ export function Checkout() {
 
             {/* ----------------------------------------------------------- nav */}
             <div className="mt-7 flex flex-wrap items-center gap-3">
+              {step === 2 && !user ? (
+                <p className="mr-auto max-w-[42ch] text-xs leading-relaxed text-amber-700 dark:text-amber-500">
+                  You are not signed in. The server refuses anonymous orders — sign in from the header
+                  first. (This check is enforced on the server; hiding the button would not be a control.)
+                </p>
+              ) : null}
+              {submitError ? (
+                <p role="alert" className="mr-auto max-w-[42ch] text-xs leading-relaxed text-destructive">
+                  {submitError}
+                </p>
+              ) : null}
               {step > 0 && (
                 <Button type="button" variant="ghost" onClick={() => setStep((s) => s - 1)}>
                   <ArrowLeft className="size-4" />
@@ -525,11 +598,16 @@ export function Checkout() {
                   <ArrowRight className="size-4" />
                 </Button>
               ) : (
-                <Button type="submit" size="lg" className="ml-auto" disabled={placing}>
+                <Button type="submit" size="lg" className="ml-auto" disabled={placing || pricing || !priced}>
                   {placing ? (
                     <>
                       <Spinner className="size-4" />
                       Placing order
+                    </>
+                  ) : pricing || !priced ? (
+                    <>
+                      <Spinner className="size-4" />
+                      Pricing with the server
                     </>
                   ) : (
                     <>

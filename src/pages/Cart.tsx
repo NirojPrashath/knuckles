@@ -1,7 +1,8 @@
 import * as React from 'react'
-import { ArrowRight, Check, Minus, Plus, ShoppingBag, Tag, Trash2, Truck, X } from 'lucide-react'
+import { ArrowRight, Check, Minus, Plus, ShieldCheck, ShoppingBag, Tag, Trash2, Truck, X } from 'lucide-react'
 import { Link } from '@/lib/router'
-import { BAG_SIZES, COUPONS, DELIVERY, FAQS, GRINDS, PRODUCTS, money } from '@/lib/catalog'
+import { cn } from '@/lib/utils'
+import { BAG_SIZES, DELIVERY, FAQS, GRINDS, PRODUCTS, money } from '@/lib/catalog'
 import { BAG_TONES } from '@/lib/images'
 import { linePrice, useCart } from '@/lib/cart'
 import { Button } from '@/components/ui/button'
@@ -23,11 +24,19 @@ import { Reveal } from '@/components/site/Reveal'
  * and a "pairs with" rail instead of empty white space.
  */
 export function Cart() {
-  const { lines, totals, setQty, remove, coupon, setCoupon, zone, setZone } = useCart()
+  const { lines, totals, setQty, remove, coupon, setCoupon, zone, setZone, pricing, priced } = useCart()
   const [code, setCode] = React.useState('')
   const [codeError, setCodeError] = React.useState<string | null>(null)
   const [codeApplied, setCodeApplied] = React.useState<string | null>(null)
 
+  /*
+   * Applying a code is now just: tell the server about it. We cannot validate
+   * it here — we do not have the list, which is the whole point of F-01 being
+   * fixed. The cart re-quotes, and the outcome below is whatever the server
+   * decided. Note we never learn WHY a code was refused: unknown, expired,
+   * basket too small and not-entitled all come back identical, so this box
+   * cannot be used to discover which codes exist.
+   */
   const applyCode = (e: React.FormEvent) => {
     e.preventDefault()
     const key = code.trim().toUpperCase()
@@ -35,17 +44,13 @@ export function Cart() {
       setCodeError('Type a code first')
       return
     }
-    if (!COUPONS[key]) {
-      setCodeError('That code is not recognised. Codes are case-insensitive — check for a typo.')
-      setCodeApplied(null)
-      setCoupon(null)
-      return
-    }
     setCodeError(null)
     setCoupon(key)
-    setCodeApplied(COUPONS[key].note)
     setCode('')
   }
+
+  const couponAccepted = priced && totals.discount > 0
+  const couponRefused = priced && !!coupon && totals.discount === 0
 
   if (lines.length === 0) {
     return (
@@ -265,11 +270,23 @@ export function Cart() {
                     Discount code
                   </label>
                   {coupon ? (
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-600/40 bg-emerald-600/5 px-3 py-2.5">
+                    <div
+                      className={
+                        couponAccepted
+                          ? 'flex items-center justify-between gap-2 rounded-lg border border-emerald-600/40 bg-emerald-600/5 px-3 py-2.5'
+                          : 'flex items-center justify-between gap-2 rounded-lg border border-amber-600/40 bg-amber-600/5 px-3 py-2.5'
+                      }
+                    >
                       <span className="inline-flex items-center gap-2 text-xs">
-                        <Tag className="size-3.5 text-emerald-700" />
+                        <Tag className={couponAccepted ? 'size-3.5 text-emerald-700' : 'size-3.5 text-amber-700'} />
                         <span className="font-mono font-medium">{coupon}</span>
-                        <span className="text-muted-foreground">{codeApplied}</span>
+                        <span className="text-muted-foreground">
+                          {pricing
+                            ? 'checking with the server…'
+                            : couponRefused
+                              ? (totals.couponNote ?? 'not valid for this order')
+                              : (totals.couponNote ?? codeApplied)}
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -361,6 +378,21 @@ export function Cart() {
                     <dd className="price text-xl font-medium">{money(totals.total)}</dd>
                   </div>
                 </dl>
+
+                {/* Where the number came from. Worth stating out loud, because
+                    it is the whole difference between this build and the last. */}
+                <p className="mt-3 inline-flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <ShieldCheck
+                    className={cn('mt-px size-3.5 shrink-0', priced ? 'text-emerald-600' : 'text-muted-foreground')}
+                  />
+                  <span>
+                    {pricing
+                      ? 'Pricing with the server…'
+                      : priced
+                        ? 'Priced by the server. Editing anything on this page changes the label, not the bill.'
+                        : 'Estimate only — the server has not priced this basket yet.'}
+                  </span>
+                </p>
 
                 <Button size="lg" className="mt-5 w-full" asChild>
                   <Link to="/checkout">
