@@ -23,6 +23,7 @@ import { Link, useRoute } from '@/lib/router'
 import { BRAND, DELIVERY, PRODUCTS, money } from '@/lib/catalog'
 import { BAG_TONES } from '@/lib/images'
 import { linePrice, useCart } from '@/lib/cart'
+import { AccountMenu } from '@/components/site/AccountMenu'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -451,6 +452,8 @@ export function Nav() {
                 </span>
               </Button>
             </div>
+
+            <AccountMenu />
 
             <Button
               variant="ghost"
