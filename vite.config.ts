@@ -26,5 +26,19 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     hmr: { clientPort: 443, protocol: 'wss' },
+    /*
+     * The browser must never be told to call the backend directly: in a hosted
+     * preview the user's machine is not this machine, so localhost:4000 would
+     * resolve to their own laptop. Vite forwards same-origin /api instead,
+     * which also keeps the session cookie first-party and means no API base
+     * URL is compiled into the bundle.
+     */
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:4000',
+        changeOrigin: false,
+        secure: false,
+      },
+    },
   },
 })

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Knuckles Roasters — Ceylon specialty coffee e-commerce. Built on the better-design tactile-minimal registry (MIT).",
+  "description": "Knuckles Roasters — Ceylon specialty coffee e-commerce. Built on the better-design registry (MIT).",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
