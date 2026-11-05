@@ -1,0 +1,175 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* generated from the better-design corpus — `npm run gen:theme` to refresh */
+@import "./tokens.css";
+@import "./themes.css";
+@import "./theme-map.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 34%, transparent);
+    color: var(--foreground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+}
+
+/* ============================================================================
+   MOTION — verbatim contracts from the corpus
+   transitions.dev ports (MIT) + animate-text specs (pixel-point, MIT)
+   ============================================================================ */
+
+/* number pop-in — 500ms · 70ms stagger · blur 2px · cubic-bezier(0.34, 1.45, 0.64, 1) */
+.t-digit-scope {
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
+}
+.t-digit-group { display: inline-flex; align-items: baseline; }
+.t-digit { display: inline-block; will-change: transform, opacity, filter; }
+.t-digit-group.is-animating .t-digit { animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both; }
+.t-digit-group.is-animating .t-digit[data-stagger] { animation-delay: calc(var(--digit-stagger) * var(--t-digit-i, 0)); }
+@keyframes t-digit-pop-in {
+  0% { transform: translate(calc(var(--digit-distance) * var(--digit-dir-x)), calc(var(--digit-distance) * var(--digit-dir-y))); opacity: 0; filter: blur(var(--digit-blur)); }
+  100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
+}
+
+/* text swap — 200ms · y 8px · blur 2px */
+.t-text-swap-scope { --text-swap-dur: 200ms; --text-swap-translate-y: 8px; --text-swap-blur: 2px; --text-swap-ease: ease-out; }
+.t-text-swap { display: inline-block; transition: transform var(--text-swap-dur) var(--text-swap-ease), filter var(--text-swap-dur) var(--text-swap-ease), opacity var(--text-swap-dur) var(--text-swap-ease); will-change: transform, filter, opacity; }
+.t-text-swap.is-exit { transform: translateY(calc(var(--text-swap-translate-y) * -1)); filter: blur(var(--text-swap-blur)); opacity: 0; }
+.t-text-swap.is-enter-start { transform: translateY(var(--text-swap-translate-y)); filter: blur(var(--text-swap-blur)); opacity: 0; transition: none; }
+
+/* panel reveal — open 400ms / close 350ms · y 80px */
+.t-panel-scope { --panel-open-dur: 400ms; --panel-close-dur: 350ms; --panel-translate-y: 80px; --panel-blur: 2px; --panel-ease: cubic-bezier(0.22, 1, 0.36, 1); }
+.t-panel-slide {
+  transform: translateY(var(--panel-translate-y)); opacity: 0; filter: blur(var(--panel-blur)); pointer-events: none; visibility: hidden;
+  transition: transform var(--panel-close-dur) var(--panel-ease), opacity var(--panel-close-dur) var(--panel-ease), filter var(--panel-close-dur) var(--panel-ease), visibility 0s linear var(--panel-close-dur);
+}
+.t-panel-slide[data-open="true"] {
+  transform: translateY(0); opacity: 1; filter: blur(0); pointer-events: auto; visibility: visible; transition-delay: 0s;
+  transition: transform var(--panel-open-dur) var(--panel-ease), opacity var(--panel-open-dur) var(--panel-ease), filter var(--panel-open-dur) var(--panel-ease);
+}
+
+/* icon swap — 200ms · scale 0.25 → 1 */
+.t-icon-swap-scope { --icon-swap-dur: 200ms; --icon-swap-blur: 2px; --icon-swap-start-scale: 0.25; --icon-swap-ease: ease-in-out; }
+.t-icon-swap { position: relative; display: inline-grid; }
+.t-icon-swap .t-icon { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center; transition: opacity var(--icon-swap-dur) var(--icon-swap-ease), filter var(--icon-swap-dur) var(--icon-swap-ease), transform var(--icon-swap-dur) var(--icon-swap-ease); }
+.t-icon-swap[data-state="a"] .t-icon[data-icon="a"], .t-icon-swap[data-state="b"] .t-icon[data-icon="b"] { opacity: 1; filter: blur(0); transform: scale(1); }
+.t-icon-swap[data-state="a"] .t-icon[data-icon="b"], .t-icon-swap[data-state="b"] .t-icon[data-icon="a"] { opacity: 0; filter: blur(var(--icon-swap-blur)); transform: scale(var(--icon-swap-start-scale)); }
+
+/* mask reveal up — 760ms · y 30px · blur 6px; 90ms per line / 16ms per character */
+@keyframes mask-reveal-up { from { opacity: 0; transform: translateY(30px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+.reveal { opacity: 0; }
+.reveal.is-in { animation: mask-reveal-up 760ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+.reveal-line .ch { display: inline-block; opacity: 0; }
+.reveal-line.is-in .ch { animation: mask-reveal-up 760ms cubic-bezier(0.22, 1, 0.36, 1) forwards; animation-delay: calc(var(--i) * var(--stagger, 16ms)); }
+
+/* soft blur in — 900ms · 25ms per character · y 16px · blur 12px */
+@keyframes soft-blur-in { from { opacity: 0; transform: translateY(16px); filter: blur(12px); } to { opacity: 1; transform: none; filter: blur(0); } }
+.blur-in .ch { display: inline-block; opacity: 0; animation: soft-blur-in 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards; animation-delay: calc(var(--i) * 25ms); white-space: pre; }
+
+/* capacity bar draw */
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-grow { transform-origin: left; animation: bar-grow 900ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ch, .reveal, .t-digit, .bar-grow { animation: none !important; opacity: 1 !important; filter: none !important; transform: none !important; }
+  .reveal { opacity: 1; }
+}
+
+/* ============================================================================
+   STORE — utility recipes. Every colour derives from tokens, so the whole shop
+   re-skins when data-theme changes (handy: six retail systems ship in themes.css).
+   ============================================================================ */
+@layer utilities {
+  /* serif display: a coffee brand sets names, not slogans, in a serif */
+  .serif {
+    font-family: var(--font-display);
+    font-variation-settings: "SOFT" 0, "WONK" 0, "opsz" 60;
+    letter-spacing: -0.015em;
+    line-height: 1.06;
+  }
+  .serif-tight { line-height: 0.98; }
+  .serif-italic { font-style: italic; font-variation-settings: "SOFT" 40, "WONK" 1, "opsz" 60; }
+
+  /* small-caps label used on bags, cards and section heads */
+  .label {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-weight: 500;
+  }
+
+  /* money and quantities never wobble between rows */
+  .tnum { font-variant-numeric: tabular-nums; }
+  .price { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  /* tactile depth: the system's inset + layered shadow pair, applied to product cards */
+  .lift { box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.06)); transition: box-shadow 200ms ease, transform 200ms ease; }
+  .lift:hover { box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.22); transform: translateY(-2px); }
+
+  /* paper grain over photography, keeps the studio shots from looking plastic */
+  .grain::after {
+    content: "";
+    position: absolute; inset: 0; pointer-events: none;
+    opacity: 0.16; mix-blend-mode: multiply;
+    background-image: radial-gradient(circle at 1px 1px, rgb(0 0 0 / 0.5) 1px, transparent 0);
+    background-size: 3px 3px;
+  }
+
+  /* the label band: the strip printed on a real coffee bag */
+  .band { border-radius: 2px; }
+
+  .hairline { border-top: 1px solid var(--border); }
+
+  .snap-x-mandatory { scroll-snap-type: x mandatory; }
+  .snap-start-always { scroll-snap-align: start; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* swatch chips for roast level / grind */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 0.3rem 0.7rem; font-size: 0.75rem; line-height: 1;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+  }
+  .chip:hover { border-color: color-mix(in oklab, var(--foreground) 35%, var(--border)); }
+  .chip[data-selected="true"] { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+  .chip[data-disabled="true"] { opacity: 0.45; text-decoration: line-through; cursor: not-allowed; }
+
+  /* stock bar: how much of this roast is left, drawn like a fill line */
+  @keyframes stock-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .stock-draw { transform-origin: left; animation: stock-draw 700ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stock-draw { animation: none; }
+  .lift:hover { transform: none; }
+}
